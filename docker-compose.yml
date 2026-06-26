@@ -5,25 +5,42 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 3
 
   web:
     build: .
+    image: ghcr.io/lxxxl/video-preview:latest
     ports:
       - "5000:5000"
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_PATH=/app/data/tasks.db
+      - SNAPSHOT_DIR=/app/data/snapshots
+      - TEMP_DIR=/app/data/tmp
+      - DOWNLOAD_DIR=/app/data/downloads
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - app_data:/app/data
 
   worker:
     build: .
+    image: ghcr.io/lxxxl/video-preview:latest
     command: rq worker --url redis://redis:6379/0
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - DATABASE_PATH=/app/data/tasks.db
+      - SNAPSHOT_DIR=/app/data/snapshots
+      - TEMP_DIR=/app/data/tmp
+      - DOWNLOAD_DIR=/app/data/downloads
     depends_on:
-      - redis
+      redis:
+        condition: service_healthy
     volumes:
       - app_data:/app/data
 

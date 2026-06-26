@@ -1,0 +1,11 @@
+.git
+.gitignore
+.claude
+.pytest_cache
+__pycache__
+data/
+*.pyc
+*.pyo
+*.md
+e2e_test.py
+tests/

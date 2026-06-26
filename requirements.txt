@@ -6,3 +6,4 @@ flask-limiter>=3.5
 structlog>=24.1
 prometheus-client>=0.20
 python-dotenv>=1.0
+libtorrent>=2.0
