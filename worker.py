@@ -45,7 +45,10 @@ def _run_task(store: TaskStore, task_id: str, magnet: str, sample_points: list[i
     )
 
     task_tmp = os.path.join(TEMP_DIR, task_id)
-    task_snap = os.path.join(SNAPSHOT_DIR, task_id)
+
+    task = store.get_task(task_id)
+    info_hash = task["info_hash"] if task else task_id
+    task_snap = os.path.join(SNAPSHOT_DIR, info_hash)
     os.makedirs(task_tmp, exist_ok=True)
     os.makedirs(task_snap, exist_ok=True)
 

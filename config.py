@@ -18,7 +18,7 @@ TASK_SETTINGS = {
 }
 
 SNAPSHOT_SETTINGS = {
-    "output_width": 320,
+    "output_width": 1280,
     "output_format": "jpeg",
     "jpeg_quality": 85,
     "ffmpeg_timeout": 30,

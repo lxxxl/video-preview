@@ -12,10 +12,13 @@ def cleanup_expired_tasks(store: TaskStore):
     expired = store.get_expired_tasks(ttl)
 
     for task_id in expired:
-        task_dir = os.path.join(SNAPSHOT_DIR, task_id)
-        if os.path.isdir(task_dir):
-            shutil.rmtree(task_dir, ignore_errors=True)
+        task = store.get_task(task_id)
+        info_hash = task["info_hash"] if task else None
         store.delete_task(task_id)
+        if info_hash and store.count_tasks_by_info_hash(info_hash) == 0:
+            snap_dir = os.path.join(SNAPSHOT_DIR, info_hash)
+            if os.path.isdir(snap_dir):
+                shutil.rmtree(snap_dir, ignore_errors=True)
         logger.info("task_cleaned", task_id=task_id)
 
     return len(expired)
