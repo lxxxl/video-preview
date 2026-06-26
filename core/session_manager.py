@@ -29,6 +29,13 @@ class SessionManager:
             "enable_lsd": True,
             "enable_natpmp": True,
             "enable_upnp": True,
+            "dht_announce_interval": 60,
+            "dht_search_branching": 10,
+            "dht_max_peers_reply": 100,
+            "min_announce_interval": 30,
+            "min_reconnect_time": 1,
+            "peer_connect_timeout": 10,
+            "torrent_connect_boost": 30,
             "alert_mask": (
                 lt.alert.category_t.status_notification
                 | lt.alert.category_t.error_notification
@@ -42,6 +49,8 @@ class SessionManager:
             ("router.utorrent.com", 6881),
             ("dht.transmissionbt.com", 6881),
             ("dht.aelitis.com", 6881),
+            ("router.nuh.dev", 6881),
+            ("dht.libtorrent.org", 25401),
         ]
         for host, port in dht_nodes:
             self._session.add_dht_router(host, port)

@@ -48,6 +48,19 @@ PUBLIC_TRACKERS = [
     "udp://tracker.moeking.me:6969/announce",
     "udp://explodie.org:6969/announce",
     "udp://tracker.tiny-vps.com:6969/announce",
+    "udp://tracker.leechers-paradise.org:6969/announce",
+    "udp://tracker.coppersurfer.tk:6969/announce",
+    "udp://p4p.arenabg.com:1337/announce",
+    "udp://tracker.internetwarriors.net:1337/announce",
+    "udp://9.rarbg.to:2920/announce",
+    "udp://tracker.pirateparty.gr:6969/announce",
+    "udp://tracker.cyberia.is:6969/announce",
+    "udp://retracker.lanta-net.ru:2710/announce",
+    "udp://open.tracker.cl:1337/announce",
+    "udp://tracker.opentrackr.org:1337/announce",
+    "https://tracker.nanoha.org:443/announce",
+    "https://tracker.lilithraws.org:443/announce",
+    "http://tracker.openbittorrent.com:80/announce",
 ]
 
 

@@ -5,8 +5,8 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 LIBTORRENT_SETTINGS = {
     "listen_port_range": (6881, 6891),
     "download_rate_limit": 5 * 1024 * 1024,
-    "connections_limit": 100,
-    "metadata_timeout": 60,
+    "connections_limit": 200,
+    "metadata_timeout": 180,
 }
 
 TASK_SETTINGS = {
