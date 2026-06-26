@@ -5,13 +5,12 @@ import libtorrent as lt
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from config import SNAPSHOT_DIR, TEMP_DIR
+from config import SNAPSHOT_DIR, TEMP_DIR, SNAPSHOT_SETTINGS, ADAPTIVE_DOWNGRADE
 from storage.task_store import TaskStore
 from core.torrent_parser import find_largest_video, compute_head_tail_pieces
 from core.segment_extractor import read_pieces, assemble_segment, cleanup_segment
 from core.snapshot_generator import generate_snapshot
 from core.mp4_utils import get_keyframe_positions
-from config import SNAPSHOT_SETTINGS
 import time
 
 logger = structlog.get_logger(__name__)
@@ -30,6 +29,34 @@ def _make_cancel_check(store, task_id):
         if _is_cancelled(store, task_id):
             raise TaskCancelled()
     return check
+
+
+def _apply_adaptive_downgrade(video_size, sample_points, adj_pieces, output_width):
+    """方案 D: 冷门/大文件自适应降级采样点和分辨率"""
+    if not ADAPTIVE_DOWNGRADE.get("enabled"):
+        return sample_points, adj_pieces, output_width
+
+    for threshold, new_points, new_adj, new_width in ADAPTIVE_DOWNGRADE["tiers"]:
+        if video_size >= threshold:
+            logger.info(
+                "adaptive_downgrade",
+                video_size_gb=round(video_size / 1024**3, 1),
+                original_points=len(sample_points),
+                new_points=len(new_points),
+                new_width=new_width,
+                new_adj=new_adj,
+            )
+            return new_points, new_adj, new_width
+
+    return sample_points, adj_pieces, output_width
+
+
+def _configure_upload_slots(handle):
+    """方案 A: torrent-level 上传限制，让 BT 客户端感知互惠，避免只下不传被惩罚"""
+    try:
+        handle.set_upload_limit(200 * 1024)   # 200 KB/s
+    except Exception:
+        pass
 
 
 def process_task(task_id: str, magnet: str, sample_points: list[int], timeout: int):
@@ -61,6 +88,17 @@ def _run_task(store: TaskStore, task_id: str, magnet: str, sample_points: list[i
     task_tmp = os.path.join(TEMP_DIR, task_id)
     try:
         video = find_largest_video(handle)
+
+        # ── 方案 D: 自适应降级 ──
+        sample_points, adj_pieces, snap_width = _apply_adaptive_downgrade(
+            video.size, sample_points,
+            SNAPSHOT_SETTINGS["adjacent_pieces"],
+            SNAPSHOT_SETTINGS["output_width"],
+        )
+
+        # ── 方案 A: 上传槽位 ──
+        _configure_upload_slots(handle)
+
         store.update_task(
             task_id,
             status="downloading",
@@ -111,7 +149,8 @@ def _run_task(store: TaskStore, task_id: str, magnet: str, sample_points: list[i
         if keyframes:
             _download_with_keyframes(store, handle, video, task_id, sample_points,
                                      timeout, keyframes, head_pieces, head_bytes,
-                                     task_tmp, task_snap, num_pieces)
+                                     task_tmp, task_snap, num_pieces,
+                                     adj_pieces, snap_width)
         else:
             _download_byte_offset(store, handle, video, task_id, sample_points,
                                   timeout, head_pieces, head_bytes,
@@ -128,9 +167,9 @@ def _run_task(store: TaskStore, task_id: str, magnet: str, sample_points: list[i
 
 def _download_with_keyframes(store, handle, video, task_id, sample_points,
                               timeout, keyframes, head_pieces, head_bytes,
-                              task_tmp, task_snap, num_pieces):
+                              task_tmp, task_snap, num_pieces,
+                              adj_pieces, snap_width):
     duration = keyframes[-1][0]
-    adj = SNAPSHOT_SETTINGS["adjacent_pieces"]
 
     sample_plan = {}
     all_sample_pieces = set()
@@ -138,7 +177,7 @@ def _download_with_keyframes(store, handle, video, task_id, sample_points,
         target_time = duration * pct / 100
         closest_kf = min(keyframes, key=lambda k: abs(k[0] - target_time))
         kf_piece = closest_kf[1] // video.piece_length
-        pieces = [p for p in range(kf_piece - adj, kf_piece + adj + 1)
+        pieces = [p for p in range(kf_piece - adj_pieces, kf_piece + adj_pieces + 1)
                   if video.first_piece <= p <= video.last_piece]
         sample_plan[pct] = {"time": closest_kf[0], "offset": closest_kf[1], "pieces": pieces}
         all_sample_pieces.update(pieces)
@@ -175,7 +214,7 @@ def _download_with_keyframes(store, handle, video, task_id, sample_points,
             if all(handle.have_piece(p) for p in plan["pieces"]):
                 _generate_sparse_snapshot(
                     store, handle, video, task_id, pct, plan,
-                    head_bytes, task_tmp, task_snap
+                    head_bytes, task_tmp, task_snap, snap_width
                 )
 
         time.sleep(1)
@@ -185,7 +224,7 @@ def _download_with_keyframes(store, handle, video, task_id, sample_points,
 
 
 def _generate_sparse_snapshot(store, handle, video, task_id, pct, plan,
-                               head_bytes, task_tmp, task_snap):
+                               head_bytes, task_tmp, task_snap, snap_width=None):
     task = store.get_task(task_id)
     if task:
         for s in task.get("snapshots", []):
@@ -209,7 +248,9 @@ def _generate_sparse_snapshot(store, handle, video, task_id, pct, plan,
         snap_filename = f"snap_{pct:02d}.jpg"
         snap_path = os.path.join(task_snap, snap_filename)
 
-        success = generate_snapshot(sparse_path, snap_path, seek_offset=plan["time"])
+        success = generate_snapshot(sparse_path, snap_path,
+                                    seek_offset=plan["time"],
+                                    width=snap_width)
         cleanup_segment(sparse_path)
 
         if success:

@@ -24,6 +24,7 @@ class SessionManager:
                 LIBTORRENT_SETTINGS["listen_port_range"][0],
             ),
             "download_rate_limit": LIBTORRENT_SETTINGS["download_rate_limit"],
+            "upload_rate_limit": LIBTORRENT_SETTINGS.get("upload_rate_limit", 0),
             "connections_limit": LIBTORRENT_SETTINGS["connections_limit"],
             "enable_dht": True,
             "enable_lsd": True,
@@ -36,10 +37,24 @@ class SessionManager:
             "min_reconnect_time": 1,
             "peer_connect_timeout": 10,
             "torrent_connect_boost": 30,
+            # ── 方案 A: 加密 + 提升 peer 交换 ──
+            "allow_multiple_connections_per_ip": True,
+            "ignore_limits_on_local_network": False,
+            "active_seeds": 0,
+            "active_downloads": 3,
+            "active_limit": 10,
+            "active_tracker_limit": 5,
+            "active_dht_limit": 10,
+            "active_lsd_limit": 10,
+            "out_enc_policy": lt.encryption_policy_t.enabled,
+            "in_enc_policy": lt.encryption_policy_t.enabled,
+            "allowed_enc_level": lt.encryption_level_t.both,
+            "prefer_rc4": False,
             "alert_mask": (
                 lt.alert.category_t.status_notification
                 | lt.alert.category_t.error_notification
                 | lt.alert.category_t.piece_progress_notification
+                | lt.alert.category_t.peer_notification
             ),
         }
         self._session = lt.session(settings)
