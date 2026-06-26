@@ -8,7 +8,7 @@ from redis import Redis
 from rq import Queue
 import structlog
 
-from config import REDIS_URL, SNAPSHOT_DIR, TEMP_DIR, DOWNLOAD_DIR, RATE_LIMIT
+import config
 from api.routes import api_bp
 from api.errors import register_error_handlers
 from storage.task_store import TaskStore
@@ -25,12 +25,12 @@ structlog.configure(
 def create_app() -> Flask:
     app = Flask(__name__)
 
-    for d in [SNAPSHOT_DIR, TEMP_DIR, DOWNLOAD_DIR]:
+    for d in [config.SNAPSHOT_DIR, config.TEMP_DIR, config.DOWNLOAD_DIR]:
         os.makedirs(d, exist_ok=True)
 
     app.config["TASK_STORE"] = TaskStore()
 
-    redis_conn = Redis.from_url(REDIS_URL)
+    redis_conn = Redis.from_url(config.REDIS_URL)
     app.config["TASK_QUEUE"] = Queue(connection=redis_conn)
 
     try:
@@ -39,8 +39,9 @@ def create_app() -> Flask:
         Limiter(
             app=app,
             key_func=get_remote_address,
-            default_limits=[f"{RATE_LIMIT['global_per_minute']} per minute"],
-            storage_uri=REDIS_URL,
+            default_limits=[f"{config.RATE_LIMIT['global_per_minute']} per minute"],
+            storage_uri=config.REDIS_URL,
+            swallow_errors=True,
         )
     except ImportError:
         pass

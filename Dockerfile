@@ -15,4 +15,4 @@ RUN mkdir -p /app/data/snapshots /app/data/tmp /app/data/downloads
 
 EXPOSE 5000
 
-CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "app:create_app()"]
+CMD ["gunicorn", "-w", "2", "-b", "0.0.0.0:5000", "--preload", "app:create_app()"]
