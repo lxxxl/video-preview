@@ -20,9 +20,8 @@ class SessionManager:
             return
         self._initialized = True
         settings = {
-            "listen_interfaces": "0.0.0.0:{}-{}".format(
+            "listen_interfaces": "0.0.0.0:{}".format(
                 LIBTORRENT_SETTINGS["listen_port_range"][0],
-                LIBTORRENT_SETTINGS["listen_port_range"][1],
             ),
             "download_rate_limit": LIBTORRENT_SETTINGS["download_rate_limit"],
             "connections_limit": LIBTORRENT_SETTINGS["connections_limit"],
@@ -37,6 +36,16 @@ class SessionManager:
             ),
         }
         self._session = lt.session(settings)
+
+        dht_nodes = [
+            ("router.bittorrent.com", 6881),
+            ("router.utorrent.com", 6881),
+            ("dht.transmissionbt.com", 6881),
+            ("dht.aelitis.com", 6881),
+        ]
+        for host, port in dht_nodes:
+            self._session.add_dht_router(host, port)
+
         self._handles = {}
         self._handles_lock = threading.Lock()
 

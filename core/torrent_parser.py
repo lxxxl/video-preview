@@ -38,6 +38,19 @@ def extract_info_hash(magnet_uri: str) -> str:
     return m.group(1).lower()
 
 
+PUBLIC_TRACKERS = [
+    "udp://tracker.opentrackr.org:1337/announce",
+    "udp://open.stealth.si:80/announce",
+    "udp://tracker.openbittorrent.com:6969/announce",
+    "udp://exodus.desync.com:6969/announce",
+    "udp://tracker.torrent.eu.org:451/announce",
+    "udp://open.demonii.com:1337/announce",
+    "udp://tracker.moeking.me:6969/announce",
+    "udp://explodie.org:6969/announce",
+    "udp://tracker.tiny-vps.com:6969/announce",
+]
+
+
 def resolve_metadata(magnet_uri: str, timeout: int = None) -> lt.torrent_handle:
     if timeout is None:
         timeout = LIBTORRENT_SETTINGS["metadata_timeout"]
@@ -50,13 +63,27 @@ def resolve_metadata(magnet_uri: str, timeout: int = None) -> lt.torrent_handle:
     params.flags |= lt.torrent_flags.upload_mode
     handle = sm.add_torrent(params)
 
+    for tracker_url in PUBLIC_TRACKERS:
+        handle.add_tracker({"url": tracker_url, "tier": 0})
+
     deadline = time.time() + timeout
+    last_log = 0
     while not handle.has_metadata():
         if time.time() > deadline:
             sm.remove_torrent(handle)
             raise TimeoutError(
                 f"Metadata resolution timed out after {timeout}s"
             )
+        now = time.time()
+        if now - last_log >= 10:
+            status = handle.status()
+            logger.info(
+                "waiting_metadata",
+                peers=status.num_peers,
+                dht_nodes=sm.session.status().dht_nodes,
+                elapsed=int(now - (deadline - timeout)),
+            )
+            last_log = now
         time.sleep(0.5)
 
     info_hash_short = str(handle.info_hash())[:8]

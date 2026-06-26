@@ -13,6 +13,7 @@ def generate_snapshot(
     width: int = None,
     quality: int = None,
     timeout: int = None,
+    codec_hint: str = None,
 ) -> bool:
     if width is None:
         width = SNAPSHOT_SETTINGS["output_width"]
@@ -30,6 +31,10 @@ def generate_snapshot(
         _strategy_first_frame,
     ]
 
+    if codec_hint:
+        strategies.insert(0, lambda s, o, off, w, q, t: _strategy_raw_codec(s, o, off, w, q, t, codec_hint))
+        strategies.insert(1, lambda s, o, off, w, q, t: _strategy_raw_codec_first(s, o, w, q, t, codec_hint))
+
     for strategy in strategies:
         success = strategy(
             segment_path, output_path, seek_offset, width, quality, timeout
@@ -44,6 +49,33 @@ def generate_snapshot(
 
     logger.error("snapshot_failed", segment=segment_path)
     return False
+
+
+def _strategy_raw_codec(segment, output, offset, width, quality, timeout, codec):
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", codec,
+        "-i", segment,
+        "-ss", str(offset),
+        "-vframes", "1",
+        "-vf", f"scale={width}:-1",
+        "-q:v", str(_jpeg_q(quality)),
+        output,
+    ]
+    return _run_ffmpeg(cmd, timeout)
+
+
+def _strategy_raw_codec_first(segment, output, width, quality, timeout, codec):
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", codec,
+        "-i", segment,
+        "-vframes", "1",
+        "-vf", f"scale={width}:-1",
+        "-q:v", str(_jpeg_q(quality)),
+        output,
+    ]
+    return _run_ffmpeg(cmd, timeout)
 
 
 def _strategy_input_seek(segment, output, offset, width, quality, timeout):

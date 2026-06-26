@@ -54,22 +54,22 @@ def setup_piece_priorities(
 
     handle.prioritize_pieces(priorities)
 
-    deadline = 0
+    deadline_ms = 0
     for p in head_pieces:
         if 0 <= p < num_pieces:
-            handle.set_piece_deadline(p, deadline)
-            deadline += 10
+            handle.set_piece_deadline(p, deadline_ms, lt.deadline_flags_t.alert_when_available)
+            deadline_ms += 100
 
     for p in tail_pieces:
         if 0 <= p < num_pieces:
-            handle.set_piece_deadline(p, deadline)
-            deadline += 10
+            handle.set_piece_deadline(p, deadline_ms, lt.deadline_flags_t.alert_when_available)
+            deadline_ms += 100
 
     for pct in sorted(sample_map.keys()):
         for p in sample_map[pct]:
             if 0 <= p < num_pieces:
-                handle.set_piece_deadline(p, deadline)
-                deadline += 10
+                handle.set_piece_deadline(p, deadline_ms, lt.deadline_flags_t.alert_when_available)
+                deadline_ms += 100
 
     handle.unset_flags(lt.torrent_flags.upload_mode)
     handle.resume()
@@ -109,6 +109,7 @@ def monitor_download(
     deadline = time.time() + timeout
 
     head_set = set(head_pieces)
+    last_log = 0
 
     while time.time() < deadline:
         downloaded = sum(1 for p in all_needed if handle.have_piece(p))
@@ -116,6 +117,22 @@ def monitor_download(
         progress.pieces_downloaded = downloaded
         progress.download_speed_bps = int(status.download_rate)
         progress.peers_connected = status.num_peers
+
+        now = time.time()
+        if now - last_log >= 10:
+            state_names = ["queued", "checking", "metadata", "downloading",
+                           "finished", "seeding", "allocating", "checking_resume"]
+            state_str = state_names[status.state] if status.state < len(state_names) else str(status.state)
+            logger.info(
+                "download_progress",
+                pieces=f"{downloaded}/{len(all_needed)}",
+                speed_kbps=round(status.download_rate / 1024, 1),
+                peers=status.num_peers,
+                seeds=status.num_seeds,
+                state=state_str,
+                progress_pct=round(status.progress * 100, 2),
+            )
+            last_log = now
 
         head_ready = all(handle.have_piece(p) for p in head_set)
 
