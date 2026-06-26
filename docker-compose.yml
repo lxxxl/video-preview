@@ -1,0 +1,32 @@
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - app_data:/app/data
+
+  worker:
+    build: .
+    command: rq worker --url redis://redis:6379/0
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    volumes:
+      - app_data:/app/data
+
+volumes:
+  redis_data:
+  app_data:

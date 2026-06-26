@@ -1,0 +1,8 @@
+flask>=3.0
+gunicorn>=21.2
+redis>=5.0
+rq>=1.16
+flask-limiter>=3.5
+structlog>=24.1
+prometheus-client>=0.20
+python-dotenv>=1.0
