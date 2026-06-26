@@ -17,10 +17,27 @@ import time
 logger = structlog.get_logger(__name__)
 
 
+class TaskCancelled(Exception):
+    pass
+
+
+def _is_cancelled(store, task_id):
+    return store.get_task_status(task_id) == "cancelled"
+
+
+def _make_cancel_check(store, task_id):
+    def check():
+        if _is_cancelled(store, task_id):
+            raise TaskCancelled()
+    return check
+
+
 def process_task(task_id: str, magnet: str, sample_points: list[int], timeout: int):
     store = TaskStore()
     try:
         _run_task(store, task_id, magnet, sample_points, timeout)
+    except TaskCancelled:
+        logger.info("task_cancelled", task_id=task_id)
     except Exception as e:
         logger.error("task_failed", task_id=task_id, error=str(e))
         store.update_task(task_id, status="failed", error=str(e))
@@ -30,73 +47,83 @@ def process_task(task_id: str, magnet: str, sample_points: list[int], timeout: i
 
 def _run_task(store: TaskStore, task_id: str, magnet: str, sample_points: list[int], timeout: int):
     import shutil
+
+    if _is_cancelled(store, task_id):
+        raise TaskCancelled()
+
+    cancel_check = _make_cancel_check(store, task_id)
+
     store.update_task(task_id, status="resolving_metadata")
 
     from core.torrent_parser import resolve_metadata
-    handle = resolve_metadata(magnet, timeout=60)
-
-    video = find_largest_video(handle)
-    store.update_task(
-        task_id,
-        status="downloading",
-        metadata_resolved=1,
-        video_file=video.name,
-        video_size_bytes=video.size,
-    )
+    handle = resolve_metadata(magnet, timeout=60, cancel_check=cancel_check)
 
     task_tmp = os.path.join(TEMP_DIR, task_id)
+    try:
+        video = find_largest_video(handle)
+        store.update_task(
+            task_id,
+            status="downloading",
+            metadata_resolved=1,
+            video_file=video.name,
+            video_size_bytes=video.size,
+        )
 
-    task = store.get_task(task_id)
-    info_hash = task["info_hash"] if task else task_id
-    task_snap = os.path.join(SNAPSHOT_DIR, info_hash)
-    os.makedirs(task_tmp, exist_ok=True)
-    os.makedirs(task_snap, exist_ok=True)
+        task = store.get_task(task_id)
+        info_hash = task["info_hash"] if task else task_id
+        task_snap = os.path.join(SNAPSHOT_DIR, info_hash)
+        os.makedirs(task_tmp, exist_ok=True)
+        os.makedirs(task_snap, exist_ok=True)
 
-    head_pieces, tail_pieces = compute_head_tail_pieces(
-        video, SNAPSHOT_SETTINGS["head_bytes"], SNAPSHOT_SETTINGS["tail_bytes"]
-    )
-    num_pieces = video.total_pieces
+        head_pieces, tail_pieces = compute_head_tail_pieces(
+            video, SNAPSHOT_SETTINGS["head_bytes"], SNAPSHOT_SETTINGS["tail_bytes"]
+        )
+        num_pieces = video.total_pieces
 
-    # Phase 1: Download head pieces
-    priorities = [0] * num_pieces
-    for p in head_pieces:
-        if 0 <= p < num_pieces:
-            priorities[p] = 7
-    handle.prioritize_pieces(priorities)
-    handle.unset_flags(lt.torrent_flags.upload_mode)
-    handle.resume()
+        # Phase 1: Download head pieces
+        priorities = [0] * num_pieces
+        for p in head_pieces:
+            if 0 <= p < num_pieces:
+                priorities[p] = 7
+        handle.prioritize_pieces(priorities)
+        handle.unset_flags(lt.torrent_flags.upload_mode)
+        handle.resume()
 
-    deadline = time.time() + min(120, timeout)
-    while time.time() < deadline:
-        if all(handle.have_piece(p) for p in head_pieces):
-            break
-        time.sleep(1)
+        deadline = time.time() + min(120, timeout)
+        while time.time() < deadline:
+            if _is_cancelled(store, task_id):
+                raise TaskCancelled()
+            if all(handle.have_piece(p) for p in head_pieces):
+                break
+            time.sleep(1)
 
-    if not all(handle.have_piece(p) for p in head_pieces):
-        store.update_task(task_id, status="failed", error="Head pieces download timeout")
-        return
+        if not all(handle.have_piece(p) for p in head_pieces):
+            store.update_task(task_id, status="failed", error="Head pieces download timeout")
+            return
 
-    head_data_dict = read_pieces(handle, head_pieces, timeout=30)
-    head_path = os.path.join(task_tmp, "head.bin")
-    assemble_segment(head_data_dict, video, head_path)
-    head_bytes = open(head_path, "rb").read()
+        head_data_dict = read_pieces(handle, head_pieces, timeout=30)
+        head_path = os.path.join(task_tmp, "head.bin")
+        assemble_segment(head_data_dict, video, head_path)
+        head_bytes = open(head_path, "rb").read()
 
-    # Phase 2: Parse keyframes and plan downloads
-    keyframes = get_keyframe_positions(head_bytes)
-    if keyframes:
-        _download_with_keyframes(store, handle, video, task_id, sample_points,
-                                 timeout, keyframes, head_pieces, head_bytes,
-                                 task_tmp, task_snap, num_pieces)
-    else:
-        _download_byte_offset(store, handle, video, task_id, sample_points,
-                              timeout, head_pieces, head_bytes,
-                              task_tmp, task_snap, num_pieces)
-
-    # Cleanup
-    from core.session_manager import SessionManager
-    SessionManager().remove_torrent(handle, delete_files=True)
-    if os.path.isdir(task_tmp):
-        shutil.rmtree(task_tmp, ignore_errors=True)
+        # Phase 2: Parse keyframes and plan downloads
+        keyframes = get_keyframe_positions(head_bytes)
+        if keyframes:
+            _download_with_keyframes(store, handle, video, task_id, sample_points,
+                                     timeout, keyframes, head_pieces, head_bytes,
+                                     task_tmp, task_snap, num_pieces)
+        else:
+            _download_byte_offset(store, handle, video, task_id, sample_points,
+                                  timeout, head_pieces, head_bytes,
+                                  task_tmp, task_snap, num_pieces)
+    finally:
+        from core.session_manager import SessionManager
+        try:
+            SessionManager().remove_torrent(handle, delete_files=True)
+        except Exception:
+            pass
+        if os.path.isdir(task_tmp):
+            shutil.rmtree(task_tmp, ignore_errors=True)
 
 
 def _download_with_keyframes(store, handle, video, task_id, sample_points,
@@ -129,6 +156,9 @@ def _download_with_keyframes(store, handle, video, task_id, sample_points,
 
     deadline = time.time() + timeout
     while time.time() < deadline:
+        if _is_cancelled(store, task_id):
+            raise TaskCancelled()
+
         downloaded = sum(1 for p in all_sample_pieces if handle.have_piece(p))
         status = handle.status()
         store.update_task(
@@ -225,6 +255,19 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
         except Exception as e:
             logger.error("snapshot_failed", task_id=task_id, pct=pct, error=str(e))
 
+    def on_progress(p):
+        store.update_task(
+            task_id,
+            pieces_downloaded=p.pieces_downloaded,
+            download_speed_bps=p.download_speed_bps,
+            peers_connected=p.peers_connected,
+        )
+
     progress = monitor_download(handle, sample_map, head_pieces,
-                                timeout=timeout, on_sample_ready=on_sample_ready)
+                                timeout=timeout, on_sample_ready=on_sample_ready,
+                                on_progress=on_progress,
+                                is_cancelled=lambda: _is_cancelled(store, task_id))
+
+    if progress.cancelled:
+        raise TaskCancelled()
     store.update_task(task_id, status="timeout" if progress.timed_out else "completed")

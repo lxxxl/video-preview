@@ -70,6 +70,11 @@ class TaskStore:
             )
         conn.commit()
 
+    def get_task_status(self, task_id: str) -> str | None:
+        conn = self._get_conn()
+        row = conn.execute("SELECT status FROM tasks WHERE task_id = ?", (task_id,)).fetchone()
+        return row["status"] if row else None
+
     def get_task(self, task_id: str) -> dict | None:
         conn = self._get_conn()
         row = conn.execute("SELECT * FROM tasks WHERE task_id = ?", (task_id,)).fetchone()

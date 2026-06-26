@@ -129,4 +129,14 @@ def cancel_task(task_id):
         abort(404)
 
     store.update_task(task_id, status="cancelled")
+
+    queue = get_task_queue()
+    if queue is not None:
+        try:
+            from rq.job import Job
+            job = Job.fetch(task_id, connection=queue.connection)
+            job.cancel()
+        except Exception:
+            pass
+
     return jsonify({"task_id": task_id, "status": "cancelled"})

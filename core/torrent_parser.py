@@ -51,7 +51,7 @@ PUBLIC_TRACKERS = [
 ]
 
 
-def resolve_metadata(magnet_uri: str, timeout: int = None) -> lt.torrent_handle:
+def resolve_metadata(magnet_uri: str, timeout: int = None, cancel_check=None) -> lt.torrent_handle:
     if timeout is None:
         timeout = LIBTORRENT_SETTINGS["metadata_timeout"]
 
@@ -68,23 +68,28 @@ def resolve_metadata(magnet_uri: str, timeout: int = None) -> lt.torrent_handle:
 
     deadline = time.time() + timeout
     last_log = 0
-    while not handle.has_metadata():
-        if time.time() > deadline:
-            sm.remove_torrent(handle)
-            raise TimeoutError(
-                f"Metadata resolution timed out after {timeout}s"
-            )
-        now = time.time()
-        if now - last_log >= 10:
-            status = handle.status()
-            logger.info(
-                "waiting_metadata",
-                peers=status.num_peers,
-                dht_nodes=sm.session.status().dht_nodes,
-                elapsed=int(now - (deadline - timeout)),
-            )
-            last_log = now
-        time.sleep(0.5)
+    try:
+        while not handle.has_metadata():
+            if time.time() > deadline:
+                raise TimeoutError(
+                    f"Metadata resolution timed out after {timeout}s"
+                )
+            if cancel_check:
+                cancel_check()
+            now = time.time()
+            if now - last_log >= 10:
+                status = handle.status()
+                logger.info(
+                    "waiting_metadata",
+                    peers=status.num_peers,
+                    dht_nodes=sm.session.status().dht_nodes,
+                    elapsed=int(now - (deadline - timeout)),
+                )
+                last_log = now
+            time.sleep(0.5)
+    except:
+        sm.remove_torrent(handle)
+        raise
 
     info_hash_short = str(handle.info_hash())[:8]
     logger.info("metadata_resolved", info_hash=info_hash_short)

@@ -20,6 +20,7 @@ class DownloadProgress:
     peers_connected: int = 0
     ready_sample_points: list[int] = field(default_factory=list)
     timed_out: bool = False
+    cancelled: bool = False
 
 
 def setup_piece_priorities(
@@ -95,6 +96,8 @@ def monitor_download(
     head_pieces: list[int],
     timeout: int = None,
     on_sample_ready=None,
+    on_progress=None,
+    is_cancelled=None,
 ) -> DownloadProgress:
     if timeout is None:
         timeout = TASK_SETTINGS["task_timeout"]
@@ -112,11 +115,18 @@ def monitor_download(
     last_log = 0
 
     while time.time() < deadline:
+        if is_cancelled and is_cancelled():
+            progress.cancelled = True
+            break
+
         downloaded = sum(1 for p in all_needed if handle.have_piece(p))
         status = handle.status()
         progress.pieces_downloaded = downloaded
         progress.download_speed_bps = int(status.download_rate)
         progress.peers_connected = status.num_peers
+
+        if on_progress:
+            on_progress(progress)
 
         now = time.time()
         if now - last_log >= 10:
