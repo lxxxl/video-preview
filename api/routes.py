@@ -27,8 +27,6 @@ def create_task():
         abort(400, description=error)
 
     store = get_task_store()
-    queue = get_task_queue()
-
     info_hash = extract_info_hash(validated["magnet"])
     task_id = uuid.uuid4().hex[:8]
     sample_points = validated["sample_points"]
@@ -49,20 +47,29 @@ def create_task():
             "message": "Cache hit",
         }), 200
 
-    queue_len = len(queue)
-    if queue_len >= config.TASK_SETTINGS["max_queue_size"]:
-        abort(503, description="Task queue is full, try again later")
+    queue = get_task_queue()
+    if queue is None:
+        store.update_task(task_id, status="failed", error="Redis not connected")
+        abort(503, description="Task queue unavailable (Redis not connected)")
 
-    from worker import process_task
-    queue.enqueue(
-        process_task,
-        task_id,
-        validated["magnet"],
-        validated["sample_points"],
-        validated["timeout"],
-        job_id=task_id,
-        job_timeout=validated["timeout"] + 120,
-    )
+    try:
+        queue_len = len(queue)
+        if queue_len >= config.TASK_SETTINGS["max_queue_size"]:
+            abort(503, description="Task queue is full, try again later")
+
+        from worker import process_task
+        queue.enqueue(
+            process_task,
+            task_id,
+            validated["magnet"],
+            validated["sample_points"],
+            validated["timeout"],
+            job_id=task_id,
+            job_timeout=validated["timeout"] + 120,
+        )
+    except Exception as e:
+        store.update_task(task_id, status="failed", error=f"Queue error: {e}")
+        abort(503, description="Task queue unavailable, try again later")
 
     return jsonify({
         "task_id": task_id,

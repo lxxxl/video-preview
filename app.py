@@ -4,8 +4,6 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from flask import Flask
-from redis import Redis
-from rq import Queue
 import structlog
 
 import config
@@ -21,6 +19,8 @@ structlog.configure(
     ],
 )
 
+logger = structlog.get_logger(__name__)
+
 
 def create_app() -> Flask:
     app = Flask(__name__)
@@ -30,8 +30,16 @@ def create_app() -> Flask:
 
     app.config["TASK_STORE"] = TaskStore()
 
-    redis_conn = Redis.from_url(config.REDIS_URL)
-    app.config["TASK_QUEUE"] = Queue(connection=redis_conn)
+    try:
+        from redis import Redis
+        from rq import Queue
+        redis_conn = Redis.from_url(config.REDIS_URL)
+        redis_conn.ping()
+        app.config["TASK_QUEUE"] = Queue(connection=redis_conn)
+        logger.info("redis_connected", url=config.REDIS_URL)
+    except Exception as e:
+        app.config["TASK_QUEUE"] = None
+        logger.warning("redis_unavailable", error=str(e), url=config.REDIS_URL)
 
     try:
         from flask_limiter import Limiter
@@ -43,7 +51,7 @@ def create_app() -> Flask:
             storage_uri=config.REDIS_URL,
             swallow_errors=True,
         )
-    except ImportError:
+    except Exception:
         pass
 
     app.register_blueprint(api_bp)
