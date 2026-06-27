@@ -118,23 +118,7 @@ def _strategy_extended_probe(segment, output, offset, width, quality, timeout):
         "-q:v", str(_jpeg_q(quality)),
         output,
     ]
-    if _run_ffmpeg(cmd1, timeout):
-        return True
-
-    # Try ignoring moov entirely (for moov-at-end files)
-    cmd2 = [
-        "ffmpeg", "-y",
-        "-analyzeduration", "200M",
-        "-probesize", "200M",
-        "-ignore_moov", "1",
-        "-ss", str(offset),
-        "-i", segment,
-        "-vframes", "1",
-        "-vf", f"scale={width}:-1",
-        "-q:v", str(_jpeg_q(quality)),
-        output,
-    ]
-    return _run_ffmpeg(cmd2, timeout)
+    return _run_ffmpeg(cmd1, timeout)
 
 
 def _strategy_first_frame(segment, output, offset, width, quality, timeout):

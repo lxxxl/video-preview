@@ -295,6 +295,8 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
 
         deadline = time.time() + 30
         while time.time() < deadline:
+            if _is_cancelled(store, task_id):
+                raise TaskCancelled()
             if all(handle.have_piece(p) for p in tail_pieces):
                 break
             time.sleep(1)
@@ -308,7 +310,11 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
                 if b"moov" in tail_data:
                     # Build extended head: head + placeholder + tail
                     logger.info("moov_found_in_tail", tail_size_kb=round(len(tail_data)/1024))
-                    extended_head = head_bytes + b"\x00" * (video.offset + video.size - len(head_bytes) - len(tail_data)) + tail_data
+                    padding = video.offset + video.size - len(head_bytes) - len(tail_data)
+                    if padding > 0:
+                        extended_head = head_bytes + b"\x00" * padding + tail_data
+                    else:
+                        extended_head = head_bytes + tail_data
             except Exception as e:
                 logger.warning("tail_download_failed", error=str(e))
 
