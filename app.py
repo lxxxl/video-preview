@@ -10,14 +10,9 @@ import config
 from api.routes import api_bp
 from api.errors import register_error_handlers
 from storage.task_store import TaskStore
+from log_config import setup_logging
 
-structlog.configure(
-    processors=[
-        structlog.processors.TimeStamper(fmt="iso"),
-        structlog.processors.add_log_level,
-        structlog.processors.JSONRenderer(),
-    ],
-)
+setup_logging()
 
 logger = structlog.get_logger(__name__)
 

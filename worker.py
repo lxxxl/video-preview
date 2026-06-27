@@ -6,6 +6,8 @@ import libtorrent as lt
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from config import SNAPSHOT_DIR, TEMP_DIR, SNAPSHOT_SETTINGS, ADAPTIVE_DOWNGRADE
+from log_config import setup_logging
+setup_logging()
 from storage.task_store import TaskStore
 from core.torrent_parser import find_largest_video, compute_head_tail_pieces
 from core.segment_extractor import read_pieces, assemble_segment, cleanup_segment

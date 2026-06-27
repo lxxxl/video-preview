@@ -1,4 +1,5 @@
 import os
+import json
 import uuid
 from flask import Blueprint, request, jsonify, send_from_directory, abort
 from api.schemas import validate_task_request
@@ -140,3 +141,40 @@ def cancel_task(task_id):
             pass
 
     return jsonify({"task_id": task_id, "status": "cancelled"})
+
+
+@api_bp.route("/api/logs", methods=["GET"])
+def get_logs():
+    log_path = os.path.join(config.LOG_DIR, "app.log")
+    if not os.path.isfile(log_path):
+        return jsonify({"lines": [], "total": 0})
+
+    limit = min(int(request.args.get("lines", 100)), 1000)
+    level_filter = request.args.get("level", "").lower()
+    task_filter = request.args.get("task_id", "")
+    event_filter = request.args.get("event", "")
+
+    with open(log_path, "r", encoding="utf-8", errors="replace") as f:
+        raw_lines = f.readlines()
+
+    parsed = []
+    for line in raw_lines:
+        line = line.strip()
+        if not line:
+            continue
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+
+        if level_filter and entry.get("level", "").lower() != level_filter:
+            continue
+        if task_filter and entry.get("task_id") != task_filter:
+            continue
+        if event_filter and event_filter not in entry.get("event", ""):
+            continue
+
+        parsed.append(entry)
+
+    result = parsed[-limit:]
+    return jsonify({"lines": result, "total": len(parsed)})

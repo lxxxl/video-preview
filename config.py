@@ -53,6 +53,9 @@ RATE_LIMIT = {
     "global_per_minute": 30,
 }
 
+LOG_DIR = os.environ.get("LOG_DIR", os.path.join(BASE_DIR, "data", "logs"))
+LOG_MAX_SIZE_MB = 10
+
 REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 DATABASE_PATH = os.environ.get("DATABASE_PATH", os.path.join(BASE_DIR, "data", "tasks.db"))
 SNAPSHOT_DIR = os.environ.get("SNAPSHOT_DIR", os.path.join(BASE_DIR, "data", "snapshots"))
