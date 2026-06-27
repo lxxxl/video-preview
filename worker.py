@@ -284,9 +284,16 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
             from core.segment_extractor import extract_segment
             extract_segment(handle, video, pieces, segment_path)
 
+            # Auto-detect codec for raw segments
+            codec_hint = None
+            if segment_path.endswith(".bin"):
+                from core.snapshot_generator import _probe_codec
+                codec_hint = _probe_codec(segment_path)
+
             snap_filename = f"snap_{pct:02d}.jpg"
             snap_path = os.path.join(task_snap, snap_filename)
-            success = generate_snapshot(segment_path, snap_path, seek_offset=0)
+            success = generate_snapshot(segment_path, snap_path, seek_offset=0,
+                                        codec_hint=codec_hint)
             cleanup_segment(segment_path)
 
             if success:
