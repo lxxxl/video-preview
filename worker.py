@@ -342,7 +342,7 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
                 f.write(extended_head)
                 first_piece = pieces[0]
                 seg_offset = first_piece * video.piece_length - video.offset
-                if seg_offset > len(extended_head):
+                if seg_offset > 0:
                     f.seek(seg_offset)
                 f.write(segment_data)
 
