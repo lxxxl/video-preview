@@ -277,7 +277,7 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
 
     # ── Try to get moov from tail if head doesn't have it ──
     tail_probe_size = 2 * 1024 * 1024  # 2MB from tail
-    tail_pieces, _ = compute_head_tail_pieces(
+    _, tail_pieces = compute_head_tail_pieces(
         video, 0, tail_probe_size
     )
     has_moov_head = b"moov" in head_bytes[:500*1024]
