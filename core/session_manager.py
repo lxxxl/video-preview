@@ -3,6 +3,31 @@ import libtorrent as lt
 from config import LIBTORRENT_SETTINGS, DOWNLOAD_DIR
 
 
+# 兼容不同版本的 libtorrent：旧版可能没有 encryption_policy_t
+def _enc(key, default_value):
+    """libtorrent 加密常量兼容获取，旧版用 int fallback"""
+    try:
+        return getattr(lt.encryption_policy_t, key)
+    except (AttributeError, TypeError):
+        # libtorrent < 2.0.8 或未编译 enum 支持
+        return {
+            "enabled": 1,
+            "forced": 2,
+            "disabled": 0,
+        }.get(key, default_value)
+
+
+def _enc_level(key, default_value):
+    try:
+        return getattr(lt.encryption_level_t, key)
+    except (AttributeError, TypeError):
+        return {
+            "plaintext": 0,
+            "rc4": 1,
+            "both": 2,
+        }.get(key, default_value)
+
+
 class SessionManager:
     _instance = None
     _lock = threading.Lock()
@@ -46,9 +71,9 @@ class SessionManager:
             "active_tracker_limit": 5,
             "active_dht_limit": 10,
             "active_lsd_limit": 10,
-            "out_enc_policy": lt.encryption_policy_t.enabled,
-            "in_enc_policy": lt.encryption_policy_t.enabled,
-            "allowed_enc_level": lt.encryption_level_t.both,
+            "out_enc_policy": _enc("enabled", 1),
+            "in_enc_policy": _enc("enabled", 1),
+            "allowed_enc_level": _enc_level("both", 2),
             "prefer_rc4": False,
             "alert_mask": (
                 lt.alert.category_t.status_notification
