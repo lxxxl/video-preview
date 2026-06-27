@@ -131,49 +131,6 @@ def _strategy_first_frame(segment, output, offset, width, quality, timeout):
     return _run_ffmpeg(cmd, timeout)
 
 
-def _probe_codec(segment_path: str) -> str | None:
-    """Detect raw video codec from segment by checking first bytes."""
-    try:
-        with open(segment_path, "rb") as f:
-            head = f.read(64)
-        if not head:
-            return None
-
-        # H.264 start code (00 00 00 01)
-        pos = head.find(b"\x00\x00\x00\x01")
-        if pos >= 0 and pos + 5 < len(head):
-            nal_type = head[pos + 4] & 0x1F
-            if nal_type in (7, 8, 5):  # SPS, PPS, IDR
-                return "h264"
-
-        # H.265 start code
-        pos = head.find(b"\x00\x00\x00\x01")
-        if pos >= 0 and pos + 6 < len(head):
-            nal_type = (head[pos + 4] >> 1) & 0x3F
-            if nal_type in (32, 33, 34, 35, 19, 20):  # VPS, SPS, PPS, AUD, IDR
-                return "hevc"
-
-        # ffprobe fallback
-        try:
-            r = subprocess.run(
-                ["ffprobe", "-v", "quiet", "-show_streams", "-select_streams", "v:0",
-                 "-show_entries", "stream=codec_name", "-of", "csv=p=0",
-                 segment_path],
-                capture_output=True, text=True, timeout=10,
-            )
-            codec_name = r.stdout.strip()
-            if codec_name in ("h264", "avc"):
-                return "h264"
-            if codec_name in ("hevc", "h265"):
-                return "hevc"
-        except Exception:
-            pass
-
-        return None
-    except Exception:
-        return None
-
-
 def _run_ffmpeg(cmd: list[str], timeout: int) -> bool:
     try:
         result = subprocess.run(
