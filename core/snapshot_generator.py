@@ -28,6 +28,7 @@ def generate_snapshot(
         _strategy_input_seek,
         _strategy_output_seek,
         _strategy_extended_probe,
+        _strategy_raw_h264,     # raw codec fallback for non-container segments
         _strategy_first_frame,
     ]
 
@@ -105,7 +106,8 @@ def _strategy_output_seek(segment, output, offset, width, quality, timeout):
 
 
 def _strategy_extended_probe(segment, output, offset, width, quality, timeout):
-    cmd = [
+    # Also try explicitly allowing missing moov for fragmented/streaming MP4
+    cmd1 = [
         "ffmpeg", "-y",
         "-analyzeduration", "100M",
         "-probesize", "100M",
@@ -116,12 +118,42 @@ def _strategy_extended_probe(segment, output, offset, width, quality, timeout):
         "-q:v", str(_jpeg_q(quality)),
         output,
     ]
-    return _run_ffmpeg(cmd, timeout)
+    if _run_ffmpeg(cmd1, timeout):
+        return True
+
+    # Try ignoring moov entirely (for moov-at-end files)
+    cmd2 = [
+        "ffmpeg", "-y",
+        "-analyzeduration", "200M",
+        "-probesize", "200M",
+        "-ignore_moov", "1",
+        "-ss", str(offset),
+        "-i", segment,
+        "-vframes", "1",
+        "-vf", f"scale={width}:-1",
+        "-q:v", str(_jpeg_q(quality)),
+        output,
+    ]
+    return _run_ffmpeg(cmd2, timeout)
 
 
 def _strategy_first_frame(segment, output, offset, width, quality, timeout):
     cmd = [
         "ffmpeg", "-y",
+        "-i", segment,
+        "-vframes", "1",
+        "-vf", f"scale={width}:-1",
+        "-q:v", str(_jpeg_q(quality)),
+        output,
+    ]
+    return _run_ffmpeg(cmd, timeout)
+
+
+def _strategy_raw_h264(segment, output, offset, width, quality, timeout):
+    """Try raw H.264 decoding as last resort for non-container data."""
+    cmd = [
+        "ffmpeg", "-y",
+        "-f", "h264",
         "-i", segment,
         "-vframes", "1",
         "-vf", f"scale={width}:-1",
