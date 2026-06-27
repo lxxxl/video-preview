@@ -265,9 +265,52 @@ def _generate_sparse_snapshot(store, handle, video, task_id, pct, plan,
 def _download_byte_offset(store, handle, video, task_id, sample_points,
                            timeout, head_pieces, head_bytes,
                            task_tmp, task_snap, num_pieces):
-    """Fallback for non-MP4 or files without keyframe index."""
+    """Fallback for non-MP4 or files without keyframe index.
+
+    Some MP4 files have 'moov' atom at the end (not fast-start optimized).
+    Try to download tail pieces and build a complete MP4 header.
+    """
     from core.torrent_parser import compute_sample_pieces
     from core.smart_downloader import setup_piece_priorities, monitor_download
+
+    # ── Try to get moov from tail if head doesn't have it ──
+    tail_probe_size = 2 * 1024 * 1024  # 2MB from tail
+    tail_pieces, _ = compute_head_tail_pieces(
+        video, 0, tail_probe_size
+    )
+    has_moov_head = b"moov" in head_bytes[:500*1024]
+
+    extended_head = head_bytes
+    if not has_moov_head and tail_pieces:
+        logger.info("downloading_tail_for_moov", tail_pieces=len(tail_pieces))
+        # Priority boost for tail pieces
+        priorities = [0] * num_pieces
+        for p in head_pieces:
+            if 0 <= p < num_pieces:
+                priorities[p] = 7
+        for p in tail_pieces:
+            if 0 <= p < num_pieces:
+                priorities[p] = 7
+        handle.prioritize_pieces(priorities)
+
+        deadline = time.time() + 30
+        while time.time() < deadline:
+            if all(handle.have_piece(p) for p in tail_pieces):
+                break
+            time.sleep(1)
+
+        if all(handle.have_piece(p) for p in tail_pieces):
+            tail_data_dict = read_pieces(handle, tail_pieces, timeout=30)
+            tail_path = os.path.join(task_tmp, "tail.bin")
+            try:
+                assemble_segment(tail_data_dict, video, tail_path)
+                tail_data = open(tail_path, "rb").read()
+                if b"moov" in tail_data:
+                    # Build extended head: head + placeholder + tail
+                    logger.info("moov_found_in_tail", tail_size_kb=round(len(tail_data)/1024))
+                    extended_head = head_bytes + b"\x00" * (video.offset + video.size - len(head_bytes) - len(tail_data)) + tail_data
+            except Exception as e:
+                logger.warning("tail_download_failed", error=str(e))
 
     sample_map = setup_piece_priorities(handle, video, sample_points)
 
@@ -288,10 +331,10 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
             # 拼接 head + segment 成稀疏 MP4 供 ffmpeg 解码
             sparse_path = os.path.join(task_tmp, f"sparse_{pct:02d}.mp4")
             with open(sparse_path, "wb") as f:
-                f.write(head_bytes)
+                f.write(extended_head)
                 first_piece = pieces[0]
                 seg_offset = first_piece * video.piece_length - video.offset
-                if seg_offset > len(head_bytes):
+                if seg_offset > len(extended_head):
                     f.seek(seg_offset)
                 f.write(segment_data)
 
