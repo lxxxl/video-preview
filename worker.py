@@ -312,7 +312,7 @@ def _download_byte_offset(store, handle, video, task_id, sample_points,
                 if b"moov" in tail_data:
                     # Build extended head: head + placeholder + tail
                     logger.info("moov_found_in_tail", tail_size_kb=round(len(tail_data)/1024))
-                    padding = video.offset + video.size - len(head_bytes) - len(tail_data)
+                    padding = video.size - len(head_bytes) - len(tail_data)
                     if padding > 0:
                         extended_head = head_bytes + b"\x00" * padding + tail_data
                     else:
